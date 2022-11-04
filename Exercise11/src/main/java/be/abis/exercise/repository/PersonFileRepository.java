@@ -1,5 +1,8 @@
 package be.abis.exercise.repository;
 
+import be.abis.exercise.exceptions.PersonAlreadyExistsException;
+import be.abis.exercise.exceptions.PersonCannotBeDeletedException;
+import be.abis.exercise.exceptions.PersonNotFoundException;
 import be.abis.exercise.model.Address;
 import be.abis.exercise.model.Company;
 import be.abis.exercise.model.Person;
@@ -7,8 +10,10 @@ import org.springframework.stereotype.Repository;
 
 import javax.annotation.PostConstruct;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Iterator;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Repository
 public class PersonFileRepository implements PersonRepository {
@@ -16,9 +21,17 @@ public class PersonFileRepository implements PersonRepository {
 	private ArrayList<Person> allPersons= new ArrayList<Person>();;
 	private String fileLoc = "/temp/javacourses/personsAPI.csv";
 
+	private Map<Integer, String> apiKeys = new HashMap<>();
+	private String apiBase= "sodfisofjlsfjsljkf";
+
+
 	@PostConstruct
 	public void init(){
 		this.readFile();
+		for(Person p:allPersons){
+			String s = apiBase + p.getPersonId();
+			apiKeys.put(p.getPersonId(), s);
+		}
 	}
 
 	@Override
@@ -31,6 +44,7 @@ public class PersonFileRepository implements PersonRepository {
 		if (allPersons.size() != 0)
 			allPersons.clear();
 		BufferedReader br = null;
+		DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 		try {
 			br = new BufferedReader(new FileReader(fileLoc));
 			String s = null;
@@ -53,7 +67,7 @@ public class PersonFileRepository implements PersonRepository {
 					p.setPersonId(!vals[0].equals("null") ? Integer.parseInt(vals[0]) : 0);
 					p.setFirstName(!vals[1].equals("null") ? vals[1] : null);
 					p.setLastName(!vals[2].equals("null") ? vals[2] : null);
-					p.setAge(Integer.parseInt(!vals[3].equals("null") ? vals[3] : "0"));
+					p.setBirthDate(LocalDate.parse(!vals[3].equals("null") ? vals[3] : "01/01/1900", dtf));
 					p.setEmailAddress(!vals[4].equals("null") ? vals[4] : null);
 					p.setPassword(!vals[5].equals("null") ? vals[5] : null);
 					p.setLanguage(!vals[6].equals("null") ? vals[6] : null);
@@ -77,7 +91,7 @@ public class PersonFileRepository implements PersonRepository {
 	}
 
 	@Override
-	public Person findPerson(String emailAddress, String passWord) {
+	public Person findPerson(String emailAddress, String passWord) throws PersonNotFoundException {
 		if (emailAddress == null || passWord == null) {
 			return null;
 		}
@@ -88,21 +102,29 @@ public class PersonFileRepository implements PersonRepository {
 
 		while (iter.hasNext()) {
 			Person pers = iter.next();
+			System.out.println("eep");
 			if (pers.getEmailAddress().equalsIgnoreCase(emailAddress) && pers.getPassword().equals(passWord)) {
 				return pers;
 			}
 		}
-		return null;
+		throw new PersonNotFoundException("Login failed. Try Again.");
 	}
 	
 	@Override
-	public Person findPerson(int id) {
+	public Person findPerson(int id) throws PersonNotFoundException {
 		this.readFile();
-		return allPersons.stream().filter(p->p.getPersonId()==id).findFirst().orElse(null);
+		return allPersons.stream().filter(p->p.getPersonId()==id).findFirst().orElseThrow(()-> new PersonNotFoundException("Person with id " + id + " does not exist."));
+	}
+
+	public List<Person> findPersonsByCompany(String companyName){
+		this.readFile();
+		return allPersons.stream()
+				.filter(p->p.getCompany().getName().equals(companyName))
+				.collect(Collectors.toList());
 	}
 
 	@Override
-	public void addPerson(Person p) throws IOException {
+	public void addPerson(Person p) throws PersonAlreadyExistsException, IOException {
 		boolean b = false;
 		this.readFile();
 		Iterator<Person> iter = allPersons.iterator();
@@ -110,39 +132,48 @@ public class PersonFileRepository implements PersonRepository {
 		while (iter.hasNext()) {
 			Person pers = iter.next();
 			if (pers.getEmailAddress().equalsIgnoreCase(p.getEmailAddress())) {
-				throw new IOException("you were already registered, login please");
+				throw new PersonAlreadyExistsException("you were already registered, login please");
 			} else {
 				b = true;
 			}
 		}
 		if (b) {
 			StringBuilder sb = this.parsePerson(p);
-			// System.out.println(sb);
-
 			pw.append("\n" + sb);
 			allPersons.add(p);
-
+			apiKeys.put(p.getPersonId(), apiBase+p.getPersonId());
 		}
 		pw.close();
 	}
 
 	@Override
-	public void deletePerson(int id) {
+	public Person deletePerson(int id) throws PersonCannotBeDeletedException {
 		Iterator<Person> iter = allPersons.iterator();
-
+		Person p= null;
+		boolean b = false;
 		while (iter.hasNext()) {
 			Person pers = iter.next();
-			if (pers.getPersonId()==id) {
+			if (pers.getPersonId() == id) {
+				p = pers;
+				System.out.println(p);
 				iter.remove();
+				b = true;
 			}
 		}
 
-		try {
-			this.writePersons();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+
+		if(b){
+			try {
+				this.writePersons();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				return p;
+			}
+		} else {
+			throw new PersonCannotBeDeletedException("The person you are trying to delete does not exist");
 		}
+		return null;
 	}
 
 	@Override
@@ -159,9 +190,9 @@ public class PersonFileRepository implements PersonRepository {
 
 	private StringBuilder parsePerson(Person p) {
 		StringBuilder sb = new StringBuilder();
+		DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 		int nr = p.getCompany().getAddress().getNr();
-		sb.append(p.getPersonId() + ";").append(p.getFirstName() + ";").append(p.getLastName() + ";")
-				.append((p.getAge() != 0 ? p.getAge() : null) + ";").append(p.getEmailAddress() + ";")
+		sb.append(p.getPersonId()).append(";").append(p.getFirstName()).append(";").append(p.getLastName() + ";").append(p.getBirthDate() != null ? p.getBirthDate().format(dtf) : null).append(";").append(p.getEmailAddress() + ";")
 				.append(p.getPassword() + ";").append(p.getLanguage().toLowerCase() + ";")
 				.append(p.getCompany().getName() + ";").append(p.getCompany().getTelephoneNumber() + ";")
 				.append(p.getCompany().getVatNr() + ";").append(p.getCompany().getAddress().getStreet() + ";")
@@ -181,6 +212,10 @@ public class PersonFileRepository implements PersonRepository {
 		}
 
 		pw.close();
+	}
+
+	public Map<Integer, String> getApiKeys() {
+		return apiKeys;
 	}
 
 }

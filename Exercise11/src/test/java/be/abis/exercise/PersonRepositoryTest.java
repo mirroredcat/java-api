@@ -1,5 +1,8 @@
 package be.abis.exercise;
 
+import be.abis.exercise.exceptions.PersonAlreadyExistsException;
+import be.abis.exercise.exceptions.PersonCannotBeDeletedException;
+import be.abis.exercise.exceptions.PersonNotFoundException;
 import be.abis.exercise.model.Address;
 import be.abis.exercise.model.Company;
 import be.abis.exercise.model.Person;
@@ -12,8 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.io.IOException;
+import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -24,9 +29,14 @@ public class PersonRepositoryTest {
 
 	@Test
 	@Order(1)
-	public void person1ShouldBeCalledJohn(){
+	public void person1ShouldBeCalledJohn() throws PersonNotFoundException {
 		String firstName = personRepository.findPerson(1).getFirstName();
 		assertEquals("John",firstName);
+	}
+
+	@Test
+	public void person20IsNotFound(){
+		assertThrows(PersonNotFoundException.class, ()-> personRepository.findPerson(20));
 	}
 
 	@Test
@@ -38,27 +48,35 @@ public class PersonRepositoryTest {
 
 	@Test
 	@Order(3)
-	public void addNewPerson() throws IOException {
+	public void addNewPerson() throws PersonAlreadyExistsException, IOException {
 		Address a = new Address("Diestsevest",32,"3000","Leuven");
 		Company c = new Company("Abis","016/455610","BE12345678",a);
-		Person p = new Person(4,"Sandy","Schillebeeckx",43,"sschillebeeckx@abis.be","abis123","nl",c);
+		Person p = new Person(4,"Sandy","Schillebeeckx", LocalDate.of(1987,3,19),"sschillebeeckx@abis.be","abis123","nl",c);
 		personRepository.addPerson(p);
 	}
 
 	@Test
 	@Order(4)
-	public void changePassWordOfAddedPerson() throws IOException {
+	public void changePassWordOfAddedPerson() throws IOException, PersonNotFoundException {
 		Person p = personRepository.findPerson("sschillebeeckx@abis.be","abis123");
 		personRepository.changePassword(p,"blabla");
 	}
 
 	@Test
 	@Order(5)
-	public void deleteAddedPerson(){
-		personRepository.deletePerson(4);
+	public void deleteAddedPerson() throws PersonCannotBeDeletedException {
+		personRepository.deletePerson(6);
 	}
 
-	
+	@Test
+	public void person20CannotBeDeleted(){
+		assertThrows(PersonCannotBeDeletedException.class, ()-> personRepository.deletePerson(20));
+	}
+
+	@Test
+	public void find2PeopleWorkAtAbis(){
+		assertEquals(personRepository.findPersonsByCompany("Abis").size(),2);
+	}
 	
 
 }
